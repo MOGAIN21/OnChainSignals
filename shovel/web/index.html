@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8"><title>Shovel</title>
+		<style>
+			body {
+				font-family: system-ui;
+				max-width: 800px;
+				margin: 0 auto;
+			}
+			.header {
+				display: flex;
+				flex-direction: row;
+				align-items: baseline;
+				justify-content: space-between;
+			}
+			.taskHeader {
+				width: 100%;
+				display: flex;
+				flex-direction: row;
+				justify-content: flex-start;
+				align-items: baseline;
+				gap: 20px;
+				margin-bottom: 10px;
+				color: dimgray;
+			}
+			.taskHeader .Progress, .taskHeader .NRows, .taskHeader .Latency , .taskHeader .Hash, .taskHeader .Num {
+				font-family: system-ui;
+				text-transform: capitalize;
+			}
+			.backfill {
+				margin: 30px 0 0 0;
+			}
+			.backfill h2 {
+				letter-spacing: 90%;
+				font-size: large;
+				font-weight: normal;
+				font-style: italic;
+				color: dimgray;
+				margin: 0 0 10px 0;
+			}
+			.backfill .Name {
+				font-size: medium;
+			}
+			.backfill .Progress, .backfill .NRows, .backfill .Latency , .backfill .Hash, .backfill .Num {
+				font-family: monospace;
+				font-size: medium;
+			}
+			.task {
+				margin-bottom: 10px;
+				padding-bottom: 10px;
+			}
+			.task:not(:only-child) {
+				border-bottom: 1px dotted dimgray;
+			}
+			.source {
+				width: 100%;
+				display: flex;
+				flex-direction: row;
+				justify-content: flex-start;
+				align-items: baseline;
+				gap: 20px;
+				font-size: x-large;
+			}
+			.destinations :first-child {
+				margin-top: 5px;
+			}
+			.destination .Name {
+				text-transform: lowercase;
+			}
+			.destination .Name::before {
+				content: "- ";
+			}
+			.destination {
+				font-size: medium;
+				width: 100%;
+				display: flex;
+				flex-direction: row;
+				justify-content: flex-start;
+				align-items: baseline;
+				gap: 20px;
+			}
+			.Name {
+				width: 25%;
+				text-transform: capitalize;
+			}
+			.NRows {
+				width: 5%;
+				text-transform: lowercase;
+				text-align: left;
+				font-family: monospace;
+			}
+			.Latency {
+				width: 10%;
+				text-transform: lowercase;
+				text-align: left;
+				font-family: monospace;
+			}
+			.Num {
+				width: 20%;
+				text-transform: lowercase;
+				text-align: left;
+				font-family: monospace;
+			}
+			.Hash {
+				width: 20%;
+				text-transform: lowercase;
+				text-align: left;
+				font-family: monospace;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.Progress {
+				width: 5%;
+				text-transform: lowercase;
+				text-align: right;
+				font-family: monospace;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="header">
+			<h1>Shovel</h1>
+			<div>
+				<a href="/add-source">+Source</a>,
+				<a href="/add-integration">+Integration</a>
+			</div>
+		</div>
+		<div class="taskHeader">
+			{{ if (gt (len .SourceUpdates) 0) -}}
+			<div class="Name">Source</div>
+			<div class="NRows">Rows</div>
+			<div class="Latency"><span>Latency</span></div>
+			<div class="Hash"><span>Hash</span></div>
+			<div class="Num"><span>Number</span></div>
+			<div class="Progress"><span>Sync</span></div>
+			{{ end -}}
+		</div>
+		<div class="tasks">
+			{{ range $su := .SourceUpdates -}}
+				<div class="task" id="{{ $su.Name }}">
+					<div class="source">
+						<div class="Name">{{ $su.Name }}</div>
+						<div class="NRows">{{ $su.NRows.Int64 }}</div>
+						<div class="Latency">{{ $su.Latency }}</div>
+						<div class="Hash">{{(printf "0x%x" $su.Hash)}}</div>
+						<div class="Num addComma">{{ $su.Num.Int64 }}</div>
+						<div class="Progress">-</div>
+					</div>
+					<div class="destinations" style="">
+						{{ range $tu := (index $.TaskUpdates $su.Name) -}}
+						<div class="destination" id="{{ $tu.DOMID }}">
+							<div class="Name">{{ $tu.DestName }}</div>
+							<div class="NRows">{{ $tu.NRows }}</div>
+							<div class="Latency">{{ $tu.Latency }}</div>
+							<div class="Hash"></div>
+							<div class="Num"></div>
+							<div class="Progress"></div>
+						</div>
+						{{ end -}}
+					</div>
+				</div>
+			{{ end -}}
+		</div>
+	</body>
+	<script>
+		function progress(start, stop) {
+			if (stop == 0) {
+				return "100%";
+			}
+			const p = (start / stop) * 100;
+			if (p == 100) {
+				return "100%";
+			} else {
+				return `${p.toFixed(2)}%`;
+			}
+		};
+		function comma(s) {
+			return Number(s).toLocaleString();
+		};
+		function update(id, field, val) {
+			const taskDiv = document.getElementById(id);
+			const fieldDiv = taskDiv.querySelector(`.${field}`);
+			fieldDiv.innerText = val;
+		};
+		document.addEventListener("DOMContentLoaded", function() {
+			document.addEventListener('keydown', function(e) {
+				if (e.keyCode == 73) {
+					document.querySelectorAll('.destinations').forEach(el => {
+						const d = el.style.display;
+						el.style.display = (d == 'none' ? '' : 'none');
+					});
+				}
+			});
+
+			document.querySelectorAll(".addComma").forEach(e => {
+				e.innerText = comma(e.innerText);
+			});
+			let updates = new EventSource("/task-updates");
+			updates.onmessage = function(event) {
+				const tu = JSON.parse(event.data);
+				if (tu.Hash) {
+					update(tu.DOMID, "Num", comma(tu.Num));
+					update(tu.DOMID, "Hash", tu.Hash);
+					update(tu.DOMID, "Latency", tu.Latency);
+					update(tu.DOMID, "NRows", tu.NRows);
+				} else {
+					update(tu.DOMID, "Latency", tu.Latency);
+					update(tu.DOMID, "NRows", tu.NRows);
+				}
+			};
+		});
+	</script>
+</html>
